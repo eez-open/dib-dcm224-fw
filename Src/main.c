@@ -707,7 +707,7 @@ static void MX_TIM19_Init(void)
   htim19.Instance = TIM19;
   htim19.Init.Prescaler = 0;
   htim19.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim19.Init.Period = 128;
+  htim19.Init.Period = 142;
   htim19.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim19.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_PWM_Init(&htim19) != HAL_OK)
@@ -721,7 +721,7 @@ static void MX_TIM19_Init(void)
     Error_Handler();
   }
   sConfigOC.OCMode = TIM_OCMODE_PWM1;
-  sConfigOC.Pulse = 64;
+  sConfigOC.Pulse = 71;
   sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
   sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
   if (HAL_TIM_PWM_ConfigChannel(&htim19, &sConfigOC, TIM_CHANNEL_2) != HAL_OK)
