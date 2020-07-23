@@ -9,6 +9,7 @@ extern ADC_HandleTypeDef hadc1;
 extern DMA_HandleTypeDef hdma_adc1;
 extern SDADC_HandleTypeDef hsdadc1;
 extern CRC_HandleTypeDef hcrc;
+extern TIM_HandleTypeDef htim19;
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -83,8 +84,24 @@ void outputEnable(int iChannel, int enable) {
 
 	if (iChannel == 0) {
 		HAL_GPIO_WritePin(OE_1_GPIO_Port, OE_1_Pin, enable ? GPIO_PIN_SET : GPIO_PIN_RESET);
+
+		HAL_GPIO_WritePin(PWM_1_GPIO_Port, PWM_1_Pin, enable ? GPIO_PIN_SET : GPIO_PIN_RESET);
+
+		if (enable) {
+			HAL_TIM_PWM_Start(&htim19, TIM_CHANNEL_2);
+		} else {
+			HAL_TIM_PWM_Stop(&htim19, TIM_CHANNEL_2);
+		}
 	} else {
 		HAL_GPIO_WritePin(OE_2_GPIO_Port, OE_2_Pin, enable ? GPIO_PIN_SET : GPIO_PIN_RESET);
+
+		HAL_GPIO_WritePin(PWM_2_GPIO_Port, PWM_2_Pin, enable ? GPIO_PIN_SET : GPIO_PIN_RESET);
+
+		if (enable) {
+			HAL_TIM_PWM_Start(&htim19, TIM_CHANNEL_3);
+		} else {
+			HAL_TIM_PWM_Stop(&htim19, TIM_CHANNEL_3);
+		}
 	}
 
 	// make sure we update SET values for this channel
