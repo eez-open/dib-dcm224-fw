@@ -2,6 +2,8 @@
 
 #include <math.h>
 
+static uint8_t sawtooth[10000];
+
 ////////////////////////////////////////////////////////////////////////////////
 
 extern SPI_HandleTypeDef hspi2;
@@ -9,6 +11,8 @@ extern ADC_HandleTypeDef hadc1;
 extern DMA_HandleTypeDef hdma_adc1;
 extern SDADC_HandleTypeDef hsdadc1;
 extern CRC_HandleTypeDef hcrc;
+extern TIM_HandleTypeDef htim2;
+extern TIM_HandleTypeDef htim4;
 extern TIM_HandleTypeDef htim19;
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -83,23 +87,23 @@ void outputEnable(int iChannel, int enable) {
 	}
 
 	if (iChannel == 0) {
-		HAL_GPIO_WritePin(OE_1_GPIO_Port, OE_1_Pin, enable ? GPIO_PIN_SET : GPIO_PIN_RESET);
-
-		HAL_GPIO_WritePin(PWM_1_GPIO_Port, PWM_1_Pin, enable ? GPIO_PIN_SET : GPIO_PIN_RESET);
-
 		if (enable) {
 			HAL_TIM_PWM_Start(&htim19, TIM_CHANNEL_2);
+			HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
+			HAL_GPIO_WritePin(OE_1_GPIO_Port, OE_1_Pin, GPIO_PIN_SET);
 		} else {
+			HAL_GPIO_WritePin(OE_1_GPIO_Port, OE_1_Pin, GPIO_PIN_RESET);
+			HAL_TIM_PWM_Stop(&htim2, TIM_CHANNEL_1);
 			HAL_TIM_PWM_Stop(&htim19, TIM_CHANNEL_2);
 		}
 	} else {
-		HAL_GPIO_WritePin(OE_2_GPIO_Port, OE_2_Pin, enable ? GPIO_PIN_SET : GPIO_PIN_RESET);
-
-		HAL_GPIO_WritePin(PWM_2_GPIO_Port, PWM_2_Pin, enable ? GPIO_PIN_SET : GPIO_PIN_RESET);
-
 		if (enable) {
 			HAL_TIM_PWM_Start(&htim19, TIM_CHANNEL_3);
+			HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_4);
+			HAL_GPIO_WritePin(OE_2_GPIO_Port, OE_2_Pin, GPIO_PIN_SET);
 		} else {
+			HAL_GPIO_WritePin(OE_2_GPIO_Port, OE_2_Pin, GPIO_PIN_RESET);
+			HAL_TIM_PWM_Stop(&htim4, TIM_CHANNEL_4);
 			HAL_TIM_PWM_Stop(&htim19, TIM_CHANNEL_3);
 		}
 	}
@@ -124,6 +128,7 @@ void readPwrGood() {
     } else {
         outputEnable(0, 0);
         outputEnable(1, 0);
+
         reg0 &= ~REG0_PWRGOOD_MASK;
     }
 }
@@ -425,6 +430,11 @@ void HAL_SPI_ErrorCallback(SPI_HandleTypeDef *hspi) {
 }
 
 void setup() {
+	int n = sizeof(sawtooth);
+	for (int i = 0; i < n; i++) {
+		sawtooth[i] = i * 255 / (n - 1);
+	}
+
     readPwrGood();
 
     // disable outputs
