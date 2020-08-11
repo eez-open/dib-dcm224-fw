@@ -2,8 +2,6 @@
 
 #include <math.h>
 
-static uint8_t sawtooth[10000];
-
 ////////////////////////////////////////////////////////////////////////////////
 
 extern SPI_HandleTypeDef hspi2;
@@ -23,9 +21,11 @@ extern TIM_HandleTypeDef htim19;
 #define REG0_CC2_MASK     (1 << 3)
 #define REG0_PWRGOOD_MASK (1 << 4)
 
+#define COUNTERPHASE_DITHERING_MASK (1 << 0)
+
 ////////////////////////////////////////////////////////////////////////////////
 
-#define BUFFER_SIZE 20
+#define BUFFER_SIZE 30
 
 uint8_t output[BUFFER_SIZE];
 uint8_t input[BUFFER_SIZE];
@@ -39,8 +39,6 @@ uint16_t *output_temperature0 = (uint16_t *)(output + 10);
 uint16_t *output_temperature1 = (uint16_t *)(output + 12);
 uint16_t *output_temperature2 = (uint16_t *)(output + 14);
 uint32_t *output_CRC = (uint32_t *)(output + BUFFER_SIZE - 4);
-
-uint16_t *inputSetValues = (uint16_t *)(input + 2);
 
 int transferCompleted;
 
@@ -56,6 +54,20 @@ uint16_t uSetNext[2];
 uint16_t iSetNext[2];
 
 int updateSetValues[2];
+
+#define PWM_DEF_FREQUENCY 100.0f
+#define PWM_DEF_DUTY 100.0f
+#define COUNTERPHASE_DEF_FREQUENCY 500000.f
+
+float pwmFrequency[2] = { PWM_DEF_FREQUENCY, PWM_DEF_FREQUENCY };
+float pwmDuty[2] = { PWM_DEF_DUTY, PWM_DEF_DUTY };
+float counterphaseFrequency = COUNTERPHASE_DEF_FREQUENCY;
+int counterphaseDithering = 0;
+
+float pwmFrequencyNext[2] = { PWM_DEF_FREQUENCY, PWM_DEF_FREQUENCY };
+float pwmDutyNext[2] = { PWM_DEF_DUTY, PWM_DEF_DUTY };
+float counterphaseFrequencyNext = COUNTERPHASE_DEF_FREQUENCY;
+int counterphaseDitheringNext = 0;
 
 int loopOperationIndex;
 
@@ -156,6 +168,105 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
         HAL_GPIO_WritePin(CC_LED_2_GPIO_Port, CC_LED_2_Pin, (reg0 & REG0_OE2_MASK) && (reg0 & REG0_CC2_MASK));
     } else if (GPIO_Pin == DIB_SYNC_Pin) {
     }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+uint32_t lastDitheringStepTickCount;
+int ditheringDirection;
+float ditheringFrequency;
+
+void restartDithering() {
+	if (counterphaseDithering) {
+		lastDitheringStepTickCount = HAL_GetTick();
+		ditheringFrequency = counterphaseFrequency;
+		ditheringDirection = 1;
+	}
+}
+
+void ditheringStep() {
+	if (counterphaseDithering) {
+		uint32_t tickCount = HAL_GetTick();
+		int32_t diff = tickCount - lastDitheringStepTickCount;
+		if (diff >= 100) {
+			lastDitheringStepTickCount = tickCount;
+
+			ditheringFrequency += ditheringDirection * counterphaseFrequency / 100.0f;
+			if (ditheringFrequency > counterphaseFrequency + counterphaseFrequency / 10.0f) {
+				ditheringFrequency = counterphaseFrequency + counterphaseFrequency / 10.0f;
+				ditheringDirection = -1;
+			} else if (ditheringFrequency < counterphaseFrequency - counterphaseFrequency / 10.0f) {
+				ditheringFrequency = counterphaseFrequency - counterphaseFrequency / 10.0f;
+				ditheringDirection = 1;
+			}
+
+			uint32_t period = (uint32_t)roundf(COUNTERPHASE_DEF_FREQUENCY * (128 + 1) / ditheringFrequency - 1) & ~(uint32_t)1;
+			uint32_t pulse = period / 2;
+
+			TIM19->ARR = period;
+		    TIM19->CCR2 = pulse;
+		}
+	}
+}
+
+void configCounterphase() {
+	uint32_t period = (uint32_t)roundf(COUNTERPHASE_DEF_FREQUENCY * (128 + 1) / counterphaseFrequency - 1) & ~(uint32_t)1;
+	uint32_t pulse = period / 2;
+
+    TIM19->ARR = period;
+    TIM19->CCR2 = pulse;
+}
+
+void configPWM1() {
+	uint32_t prescaler = sqrt(64000000.0f / pwmFrequency[0]) - 1;
+	uint32_t period = prescaler;
+	uint32_t pulse = pwmDuty[0] == 100.0f ? period + 1 : (uint32_t)roundf(period * pwmDuty[0] / 100.0f);
+
+	TIM2->PSC = prescaler;
+    TIM2->ARR = period;
+    TIM2->CCR2 = pulse;
+}
+
+void configPWM2() {
+	uint32_t prescaler = sqrt(64000000.0f / pwmFrequency[1]) - 1;
+	uint32_t period = prescaler;
+	uint32_t pulse = pwmDuty[1] == 100.0f ? period + 1 : (uint32_t)roundf(period * pwmDuty[1] / 100.0f);
+
+	TIM4->PSC = prescaler;
+    TIM4->ARR = period;
+    TIM4->CCR2 = pulse;
+}
+
+void loopOperation_ConfigTimers() {
+	if (counterphaseFrequency != counterphaseFrequencyNext) {
+		counterphaseFrequency = counterphaseFrequencyNext;
+
+		configCounterphase();
+
+	    restartDithering();
+	}
+
+	if (counterphaseDithering != counterphaseDitheringNext) {
+		counterphaseDithering = counterphaseDitheringNext;
+
+		restartDithering();
+	}
+
+	ditheringStep();
+
+	if (pwmFrequency[0] != pwmFrequencyNext[0] || pwmDuty[0] != pwmDutyNext[0]) {
+		pwmFrequency[0] = pwmFrequencyNext[0];
+		pwmDuty[0] = pwmDutyNext[0];
+
+		configPWM1();
+	}
+
+	if (pwmFrequency[1] != pwmFrequencyNext[1] || pwmDuty[1] != pwmDutyNext[1]) {
+		pwmFrequency[1] = pwmFrequencyNext[1];
+		pwmDuty[1] = pwmDutyNext[1];
+
+		configPWM2();
+	}
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -298,11 +409,10 @@ void slaveSynchro(void) {
 
     uint8_t rxBuffer[15] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
 
-    do {
-        if (HAL_SPI_TransmitReceive(&hspi2, (uint8_t *)&txBuffer, (uint8_t *)&rxBuffer, sizeof(rxBuffer), HAL_MAX_DELAY) != HAL_OK) {
-            Error_Handler();
-        }
-    } while (rxBuffer[0] != SPI_MASTER_SYNBYTE);
+    HAL_SPI_TransmitReceive_DMA(&hspi2, (uint8_t *)&txBuffer, (uint8_t *)&rxBuffer, sizeof(rxBuffer));
+    HAL_GPIO_WritePin(DIB_IRQ_GPIO_Port, DIB_IRQ_Pin, GPIO_PIN_SET);
+    while (!transferCompleted) {
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -398,7 +508,8 @@ LoopOperation loopOperations[] = {
   loopOperation_AdcI0,
   loopOperation_AdcU1,
   loopOperation_AdcI1,
-  loopOperation_Temperature
+  loopOperation_Temperature,
+  loopOperation_ConfigTimers
 };
 
 static const int NUM_LOOP_OPERATIONS = sizeof(loopOperations) / sizeof(LoopOperation);
@@ -419,10 +530,12 @@ void beginTransfer() {
     *output_CRC = HAL_CRC_Calculate(&hcrc, (uint32_t *)output, BUFFER_SIZE - 4);
 
     HAL_SPI_TransmitReceive_DMA(&hspi2, output, input, BUFFER_SIZE);
+    HAL_GPIO_WritePin(DIB_IRQ_GPIO_Port, DIB_IRQ_Pin, GPIO_PIN_SET);
 }
 
 void HAL_SPI_TxRxCpltCallback(SPI_HandleTypeDef *hspi) {
-  transferCompleted = 1;
+	HAL_GPIO_WritePin(DIB_IRQ_GPIO_Port, DIB_IRQ_Pin, GPIO_PIN_RESET);
+	transferCompleted = 1;
 }
 
 void HAL_SPI_ErrorCallback(SPI_HandleTypeDef *hspi) {
@@ -430,11 +543,6 @@ void HAL_SPI_ErrorCallback(SPI_HandleTypeDef *hspi) {
 }
 
 void setup() {
-	int n = sizeof(sawtooth);
-	for (int i = 0; i < n; i++) {
-		sawtooth[i] = i * 255 / (n - 1);
-	}
-
     readPwrGood();
 
     // disable outputs
@@ -444,6 +552,10 @@ void setup() {
     dacInit();
 
     sdadcInit();
+
+    configCounterphase();
+    configPWM1();
+    configPWM2();
 
     slaveSynchro();
 
@@ -458,10 +570,21 @@ void loop() {
 		outputEnable(0, input[0] & REG0_OE1_MASK);
 		outputEnable(1, input[0] & REG0_OE2_MASK);
 
+		uint16_t *inputSetValues = (uint16_t *)(input + 2);
+
 		uSetNext[0] = inputSetValues[0];
 		iSetNext[0] = inputSetValues[1];
 		uSetNext[1] = inputSetValues[2];
 		iSetNext[1] = inputSetValues[3];
+
+		float *inputFloatValues = (float *)(inputSetValues + 4);
+
+		pwmFrequencyNext[0] = inputFloatValues[0];
+		pwmDutyNext[0] = inputFloatValues[1];
+		pwmFrequencyNext[1] = inputFloatValues[2];
+		pwmDutyNext[1] = inputFloatValues[3];
+		counterphaseFrequencyNext = inputFloatValues[4];
+		counterphaseDitheringNext = input[1] & COUNTERPHASE_DITHERING_MASK;
 
         beginTransfer();
     }
