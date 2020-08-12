@@ -560,7 +560,6 @@ void setup() {
     slaveSynchro();
 
     beginTransfer();
-    HAL_GPIO_WritePin(DIB_IRQ_GPIO_Port, DIB_IRQ_Pin, GPIO_PIN_SET);
 }
 
 void loop() {
