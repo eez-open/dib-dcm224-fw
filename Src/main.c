@@ -94,6 +94,18 @@ static void MX_TIM4_Init(void);
 /* USER CODE BEGIN 0 */
 void setup();
 void loop();
+
+void TIM19_Init(void) {
+  MX_TIM19_Init();
+}
+
+void TIM2_Init(void) {
+  MX_TIM2_Init();
+}
+
+void TIM4_Init(void) {
+  MX_TIM4_Init();
+}
 /* USER CODE END 0 */
 
 /**

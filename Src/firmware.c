@@ -209,32 +209,78 @@ void ditheringStep() {
 	}
 }
 
+void TIM19_Init(void);
+void TIM2_Init(void);
+void TIM4_Init(void);
+
 void configCounterphase() {
+	if (reg0 & REG0_OE1_MASK) {
+		HAL_TIM_PWM_Stop(&htim19, TIM_CHANNEL_2);
+	}
+
+	if (reg0 & REG0_OE2_MASK) {
+		HAL_TIM_PWM_Stop(&htim19, TIM_CHANNEL_3);
+	}
+
+	HAL_TIM_PWM_DeInit(&htim19);
+	TIM19_Init();
+
 	uint32_t period = (uint32_t)roundf(COUNTERPHASE_DEF_FREQUENCY * (128 + 1) / counterphaseFrequency - 1) & ~(uint32_t)1;
 	uint32_t pulse = period / 2;
 
     TIM19->ARR = period;
     TIM19->CCR2 = pulse;
+    TIM19->CCR3 = pulse;
+
+	if (reg0 & REG0_OE1_MASK) {
+		HAL_TIM_PWM_Start(&htim19, TIM_CHANNEL_2);
+	}
+
+	if (reg0 & REG0_OE2_MASK) {
+		HAL_TIM_PWM_Start(&htim19, TIM_CHANNEL_3);
+	}
 }
 
 void configPWM1() {
+	if (reg0 & REG0_OE1_MASK) {
+		HAL_TIM_PWM_Stop(&htim2, TIM_CHANNEL_1);
+	}
+
+	HAL_TIM_PWM_DeInit(&htim2);
+	TIM2_Init();
+
 	uint32_t prescaler = sqrt(64000000.0f / pwmFrequency[0]) - 1;
 	uint32_t period = prescaler;
 	uint32_t pulse = pwmDuty[0] == 100.0f ? period + 1 : (uint32_t)roundf(period * pwmDuty[0] / 100.0f);
 
 	TIM2->PSC = prescaler;
     TIM2->ARR = period;
-    TIM2->CCR2 = pulse;
+    TIM2->CCR1 = pulse;
+
+	if (reg0 & REG0_OE1_MASK) {
+		HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
+	}
 }
 
 void configPWM2() {
+	if (reg0 & REG0_OE2_MASK) {
+		HAL_TIM_PWM_Stop(&htim4, TIM_CHANNEL_4);
+	}
+
+	HAL_TIM_PWM_DeInit(&htim4);
+	TIM4_Init();
+
 	uint32_t prescaler = sqrt(64000000.0f / pwmFrequency[1]) - 1;
 	uint32_t period = prescaler;
 	uint32_t pulse = pwmDuty[1] == 100.0f ? period + 1 : (uint32_t)roundf(period * pwmDuty[1] / 100.0f);
 
 	TIM4->PSC = prescaler;
     TIM4->ARR = period;
-    TIM4->CCR2 = pulse;
+    TIM4->CCR4 = pulse;
+
+	if (reg0 & REG0_OE2_MASK) {
+		HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_4);
+	}
 }
 
 void loopOperation_ConfigTimers() {
